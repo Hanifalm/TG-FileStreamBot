@@ -1,11 +1,10 @@
-# Taken from megadlbot_oss <https://github.com/eyaadh/megadlbot_oss/blob/master/mega/webserver/routes.py>
-# Thanks to Eyaadh <https://github.com/eyaadh>
-
+#!/usr/bin/env python3
 import time
 import math
 import logging
 import mimetypes
 import traceback
+import subprocess
 from aiohttp import web
 from aiohttp.http_exceptions import BadStatusLine
 from WebStreamer.bot import multi_clients, work_loads, StreamBot
@@ -13,7 +12,7 @@ from WebStreamer.vars import Var
 from WebStreamer.server.exceptions import FIleNotFound, InvalidHash
 from WebStreamer import utils, StartTime, __version__
 from WebStreamer.utils.render_template import render_page
-
+import static_ffmpeg  # Pastikan modul ini tersedia
 
 routes = web.RouteTableDef()
 
@@ -52,7 +51,7 @@ async def stream_handler(request: web.Request):
         raise web.HTTPInternalServerError(text=str(e))
 
 @routes.get("/dl/{path}", allow_head=True)
-async def stream_handler(request: web.Request):
+async def download_handler(request: web.Request):
     try:
         path = request.match_info["path"]
         return await media_streamer(request, path)
@@ -85,15 +84,10 @@ async def video_stream_handler(request: web.Request):
         logging.debug(traceback.format_exc())
         raise web.HTTPInternalServerError(text=str(e))
 
-import static_ffmpeg
-import subprocess
-# ffmpeg installed on first call, threadsafe.
-
-# ffmpeg installed on first call to add_paths(), threadsafe.
 @routes.get("/hls/{path}", allow_head=True)
 async def hls_handler(request: web.Request):
     path = request.match_info["path"]
-    video_url = f"https://example.com/video{path}"  # Adjust your source URL
+    video_url = f"https://example.com/video{path}"  # Sesuaikan URL sumber video
 
     cmd = [
         "static_ffmpeg", "-i", video_url, "-c:v", "copy", "-c:a", "aac",
@@ -103,6 +97,31 @@ async def hls_handler(request: web.Request):
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return web.Response(body=proc.stdout, content_type="application/vnd.apple.mpegurl")
 
+# Route baru untuk halaman player yang menggunakan custom PlayerJs
+@routes.get("/player/{path}", allow_head=True)
+async def player_handler(request: web.Request):
+    path = request.match_info["path"]
+    # Halaman HTML yang memuat custom PlayerJs dan mengarahkan file video ke route /video/{path}
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Custom Video Player</title>
+  <script src="https://cdn.jsdelivr.net/gh/Hanifalm/PlayerJs-Custom@refs/heads/main/playerjs%20(1).js"></script>
+</head>
+<body style="margin:0; background: #000;">
+  <div id="player"></div>
+  <script>
+    new Playerjs({{
+      id: "player",
+      file: "/video/{path}"
+    }});
+  </script>
+</body>
+</html>'''
+    return web.Response(text=html, content_type="text/html")
+
 async def media_streamer(request: web.Request, db_id: str, is_video: bool = False):
     range_header = request.headers.get("Range", 0)
 
@@ -110,13 +129,13 @@ async def media_streamer(request: web.Request, db_id: str, is_video: bool = Fals
     faster_client = multi_clients[index]
 
     if Var.MULTI_CLIENT:
-        logging.info(f"Client {index} is now serving {request.headers.get('X-FORWARDED-FOR', request.remote)}")
+        logging.info(f"Client {index} sedang serving {request.headers.get('X-FORWARDED-FOR', request.remote)}")
 
     if faster_client in class_cache:
         tg_connect = class_cache[faster_client]
-        logging.debug(f"Using cached ByteStreamer object for client {index}")
+        logging.debug(f"Menggunakan objek ByteStreamer yang sudah di-cache untuk client {index}")
     else:
-        logging.debug(f"Creating new ByteStreamer object for client {index}")
+        logging.debug(f"Membuat objek ByteStreamer baru untuk client {index}")
         tg_connect = utils.ByteStreamer(faster_client)
         class_cache[faster_client] = tg_connect
 
@@ -153,19 +172,34 @@ async def media_streamer(request: web.Request, db_id: str, is_video: bool = Fals
 
     mime_type = file_id.mime_type or mimetypes.guess_type(utils.get_name(file_id))[0] or "application/octet-stream"
 
-    # If the request is for video, set disposition to 'inline' to make it streamable
     disposition = "inline" if is_video else "attachment"
+
+    headers = {
+        "Content-Type": mime_type,
+        "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
+        "Content-Length": str(req_length),
+        "Content-Disposition": f'{disposition}; filename="{utils.get_name(file_id)}"',
+        "Accept-Ranges": "bytes",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    }
+
+    if is_video:
+        headers["X-Frame-Options"] = "ALLOWALL"
+        # Jika ingin menggunakan CSP, bisa menambahkan:
+        # headers["Content-Security-Policy"] = "frame-ancestors *;"
 
     return web.Response(
         status=206 if range_header else 200,
         body=body,
-        headers={
-            "Content-Type": mime_type,
-            "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
-            "Content-Length": str(req_length),
-            "Content-Disposition": f'{disposition}; filename="{utils.get_name(file_id)}"',
-            "Accept-Ranges": "bytes",
-            "Access-Control-Allow-Origin": "https://movies.atongjona.com",
-            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        },
+        headers=headers,
     )
+
+def init_app():
+    app = web.Application()
+    app.add_routes(routes)
+    return app
+
+if __name__ == "__main__":
+    app = init_app()
+    web.run_app(app)

@@ -50,9 +50,9 @@ async def gen_link(m: Message, _id, name: list) -> tuple[InlineKeyboardMarkup, s
     file_size = humanbytes(get_media_file_size(m))
     page_link = f"{Var.URL}watch/{_id}"
     video_link = f"{Var.URL}video/{_id}"
-    
+    player_link = f"{Var.URL}video/{_id}"
     stream_link = f"{Var.URL}dl/{_id}"
-    Stream_Text=lang.STREAM_MSG_TEXT.format(file_name, file_size, stream_link, video_link, page_link, name[0], name[1])
+    Stream_Text=lang.STREAM_MSG_TEXT.format(file_name, file_size, stream_link, video_link, player_link, page_link, name[0], name[1])
     reply_markup=InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("🖥STREAM", url=page_link), InlineKeyboardButton("Dᴏᴡɴʟᴏᴀᴅ 📥", url=stream_link)]

@@ -40,6 +40,7 @@ class Language:
 <b>📦 Fɪʟᴇ ꜱɪᴢᴇ :</b> <i>{}</i>\n
 <b>📥 Dᴏᴡɴʟᴏᴀᴅ :</b> <code>{}</code>\n
 <b>🖥 STREAM :</b> <code>{}</code>\n
+<b>🖥 PLAYER :</b> <code>{}</code>\n
 <b>🖥 WATCH:</b> <code>{}</code>`\n
 <b>Link Generated Using<b> <a href='https://t.me/{}'>{}</a>"""
 
